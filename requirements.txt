@@ -1,0 +1,20 @@
+# Core
+pydantic>=2.0
+python-dotenv>=1.0
+
+# LangGraph / LangChain
+langgraph>=0.2
+langchain-openai>=0.2
+langchain-core>=0.3
+langchain-community>=0.3
+
+# Frontend
+streamlit>=1.28
+pandas>=2.0
+
+# Optional: web research (Tavily) – no extra package; langchain-community includes it.
+# Set TAVILY_API_KEY in .env to enable research.
+
+# Optional fallback for image generation. OpenAI is tried first using OPENAI_API_KEY.
+# Gemini is used only if OpenAI image generation fails and GOOGLE_API_KEY is set.
+google-genai>=1.0
