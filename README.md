@@ -111,3 +111,6 @@ If OpenAI image generation fails and you want a fallback provider, add `GOOGLE_A
 - **bwa_frontend.py** – Streamlit UI; run with `streamlit run bwa_frontend.py`.
 - **publish.py** – Publish posts to Dev.to and Medium (optional; requires `requests` and API keys in `.env`).
 - **1_bwa_basic.ipynb … 5_bwa_image.ipynb** – Jupyter notebooks for development/experiments.
+
+
+#hi new branch 
