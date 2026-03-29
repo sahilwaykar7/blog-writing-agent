@@ -82,6 +82,17 @@ After a blog is generated, open the **Markdown Preview** tab and scroll to **Pub
 
 Then check **Publish to Dev.to** and/or **Publish to Medium**, optionally check **Publish as draft**, and click **Publish**. The post URL will appear on success.
 
+#### Images on Dev.to / Medium (Cloudinary)
+
+Platforms cannot load local paths like `images/foo.png`. To publish **inline images** automatically:
+
+1. Create a free account at [Cloudinary](https://cloudinary.com) and open the **Dashboard**.
+2. Copy **CLOUDINARY_URL** (or **Cloud name**, **API Key**, **API Secret**) into your `.env`.
+3. Install deps: `pip install -r requirements.txt` (includes `cloudinary`).
+4. In **Publish to web**, keep **Upload images to Cloudinary first** enabled.
+
+The app uploads each file under `images/` to Cloudinary, replaces links with `https://res.cloudinary.com/...` in the markdown, then publishes. The first image can also be used as Dev.to **cover image** when applicable.
+
 ---
 
 ## Optional: image generation fallback
@@ -102,6 +113,7 @@ If OpenAI image generation fails and you want a fallback provider, add `GOOGLE_A
 | Research returns no results | Set `TAVILY_API_KEY` in `.env` if you want web search. |
 | Images not generated | OpenAI image generation is tried first. If that fails, set `GOOGLE_API_KEY` for Gemini fallback and retry. |
 | Publish failed | Ensure `DEVTO_API_KEY` or `MEDIUM_INTEGRATION_TOKEN` is set in `.env` and valid. |
+| Images missing on published post | Add Cloudinary credentials and enable **Upload images to Cloudinary** before publish (see above). |
 
 ---
 
@@ -109,8 +121,5 @@ If OpenAI image generation fails and you want a fallback provider, add `GOOGLE_A
 
 - **bwa_backend.py** – LangGraph pipeline (router → research → plan → workers → reducer/images).
 - **bwa_frontend.py** – Streamlit UI; run with `streamlit run bwa_frontend.py`.
-- **publish.py** – Publish posts to Dev.to and Medium (optional; requires `requests` and API keys in `.env`).
+- **publish.py** – Dev.to/Medium publish and optional Cloudinary upload for image URLs.
 - **1_bwa_basic.ipynb … 5_bwa_image.ipynb** – Jupyter notebooks for development/experiments.
-
-
-#hi new branch 

@@ -18,7 +18,15 @@ import streamlit as st
 from bwa_backend import app
 
 try:
-    from publish import publish_to_devto, publish_to_medium, extract_post_url
+    from publish import (
+        publish_to_devto,
+        publish_to_medium,
+        extract_post_url,
+        rewrite_markdown_local_images_to_cloudinary,
+        cloudinary_configured,
+        first_https_image_url,
+        markdown_still_has_local_image_paths,
+    )
     PUBLISH_AVAILABLE = True
 except Exception:
     PUBLISH_AVAILABLE = False
@@ -451,6 +459,16 @@ if out:
                 publish_devto = st.checkbox("Publish to **Dev.to**", value=False)
                 publish_medium = st.checkbox("Publish to **Medium**", value=False)
                 as_draft = st.checkbox("Publish as draft", value=False)
+                upload_cloudinary = st.checkbox(
+                    "Upload images to **Cloudinary** first (needed for images on Dev.to/Medium)",
+                    value=cloudinary_configured(),
+                    disabled=not cloudinary_configured(),
+                )
+                if not cloudinary_configured():
+                    st.caption(
+                        "Add **Cloudinary** credentials to `.env` (see README) so local `images/` files "
+                        "become public URLs before publish."
+                    )
                 tags: List[str] = []
                 plan_obj = out.get("plan")
                 if plan_obj:
@@ -466,9 +484,63 @@ if out:
                         st.warning("Select at least one platform (Dev.to or Medium).")
                     else:
                         published = not as_draft
+                        md_for_publish = final_md
+                        if upload_cloudinary and cloudinary_configured():
+                            md_for_publish, cnotes = rewrite_markdown_local_images_to_cloudinary(
+                                final_md, Path.cwd()
+                            )
+                            for line in cnotes:
+                                if line.startswith("Uploaded") or "Cloudinary not configured" in line:
+                                    st.success(line) if line.startswith("Uploaded") else st.warning(line)
+                                else:
+                                    st.caption(line)
+                        elif (publish_devto or publish_medium) and re.search(
+                            r"!\[[^\]]*\]\([^)]*(?:\./)?images/",
+                            final_md,
+                        ) and not (upload_cloudinary and cloudinary_configured()):
+                            st.warning(
+                                "This post references local **images/** paths. Without Cloudinary upload, "
+                                "images will **not** show on Dev.to/Medium. Add Cloudinary env vars and enable upload, "
+                                "or add images manually on the platform after publishing."
+                            )
+                        cover = first_https_image_url(md_for_publish) if md_for_publish else None
+
+                        if (publish_devto or publish_medium) and markdown_still_has_local_image_paths(
+                            md_for_publish
+                        ):
+                            st.error(
+                                "**Images were not fully uploaded.** The markdown still has local paths like "
+                                "`images/...`. Dev.to/Medium cannot load those. Fix: set `CLOUDINARY_URL` in `.env` "
+                                "**and** on Render, run `pip install cloudinary`, keep **Upload images to Cloudinary** "
+                                "on, ensure files exist in `images/`, then publish again. See messages above for "
+                                "“Image not found” or Cloudinary errors."
+                            )
+                            st.stop()
+
                         for name, key, do_publish, pub_fn in [
-                            ("Dev.to", "devto", publish_devto, lambda: publish_to_devto(blog_title, final_md, published=published, tags=tags or None)),
-                            ("Medium", "medium", publish_medium, lambda: publish_to_medium(blog_title, final_md, published=published, tags=tags or None)),
+                            (
+                                "Dev.to",
+                                "devto",
+                                publish_devto,
+                                lambda c=cover: publish_to_devto(
+                                    blog_title,
+                                    md_for_publish,
+                                    published=published,
+                                    tags=tags or None,
+                                    cover_image=c,
+                                ),
+                            ),
+                            (
+                                "Medium",
+                                "medium",
+                                publish_medium,
+                                lambda: publish_to_medium(
+                                    blog_title,
+                                    md_for_publish,
+                                    published=published,
+                                    tags=tags or None,
+                                ),
+                            ),
                         ]:
                             if not do_publish:
                                 continue

@@ -9,9 +9,117 @@ import re
 from typing import Any, Optional
 
 import requests
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Markdown image: ![alt](path_or_url)
+_MD_IMG = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+
+
+def cloudinary_configured() -> bool:
+    """True if Cloudinary env is set (CLOUDINARY_URL or cloud_name + key + secret)."""
+    if os.environ.get("CLOUDINARY_URL", "").strip():
+        return True
+    return all(
+        os.environ.get(k, "").strip()
+        for k in ("CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET")
+    )
+
+
+def _configure_cloudinary() -> None:
+    import cloudinary
+
+    url = os.environ.get("CLOUDINARY_URL", "").strip()
+    if url:
+        cloudinary.config(cloudinary_url=url)
+    else:
+        cloudinary.config(
+            cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
+            api_key=os.environ.get("CLOUDINARY_API_KEY"),
+            api_secret=os.environ.get("CLOUDINARY_API_SECRET"),
+        )
+
+
+def rewrite_markdown_local_images_to_cloudinary(
+    markdown: str,
+    base_dir: Path,
+) -> tuple[str, list[str]]:
+    """
+    Upload local image files referenced in markdown to Cloudinary and replace src with https URLs.
+    Skips URLs that already start with http:// or https://.
+    Returns (new_markdown, warning_messages).
+    If Cloudinary is not configured, returns (markdown, ["Cloudinary not configured — add CLOUDINARY_* to .env."]).
+    """
+    notes: list[str] = []
+    if not cloudinary_configured():
+        return markdown, [
+            "Cloudinary not configured — image links stay local; Dev.to will not show them. "
+            "Set CLOUDINARY_URL or CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET."
+        ]
+
+    try:
+        import cloudinary.uploader
+    except ImportError:
+        return markdown, ["Install Cloudinary SDK: pip install cloudinary"]
+
+    _configure_cloudinary()
+    cache: dict[str, str] = {}
+
+    def replace_one(m: re.Match[str]) -> str:
+        alt = m.group(1)
+        src = m.group(2).strip().strip('"').strip("'")
+        if src.startswith("http://") or src.startswith("https://"):
+            return m.group(0)
+        rel = src.lstrip("./")
+        path = (base_dir / rel).resolve()
+        key = str(path)
+        if key in cache:
+            return f"![{alt}]({cache[key]})"
+        if not path.is_file():
+            notes.append(f"Image not found (skipped): {src}")
+            return m.group(0)
+        try:
+            out = cloudinary.uploader.upload(
+                str(path),
+                folder=os.environ.get("CLOUDINARY_FOLDER", "blog-writing-agent"),
+            )
+            secure = out.get("secure_url")
+            if not secure:
+                notes.append(f"Cloudinary upload returned no URL: {path.name}")
+                return m.group(0)
+            cache[key] = secure
+            return f"![{alt}]({secure})"
+        except Exception as e:
+            notes.append(f"Cloudinary upload failed ({path.name}): {e}")
+            return m.group(0)
+
+    new_md = _MD_IMG.sub(replace_one, markdown)
+    if cache:
+        notes.insert(0, f"Uploaded {len(cache)} image(s) to Cloudinary.")
+    return new_md, notes
+
+
+def first_https_image_url(markdown: str) -> Optional[str]:
+    """First https:// URL inside a markdown image, for Dev.to cover_image."""
+    for m in _MD_IMG.finditer(markdown):
+        src = m.group(2).strip()
+        if src.startswith("https://"):
+            return src
+    return None
+
+
+def markdown_still_has_local_image_paths(markdown: str) -> bool:
+    """True if any markdown image still uses a non-http(s) src (e.g. images/foo.png)."""
+    for m in _MD_IMG.finditer(markdown):
+        src = m.group(2).strip().strip('"').strip("'")
+        if src.startswith("http://") or src.startswith("https://"):
+            continue
+        if src and not src.startswith("data:"):
+            return True
+    return False
 
 
 def extract_post_url(platform: str, response: dict[str, Any]) -> Optional[str]:
@@ -68,6 +176,7 @@ def publish_to_devto(
     published: bool = True,
     tags: Optional[list[str]] = None,
     description: Optional[str] = None,
+    cover_image: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     Create (and optionally publish) an article on Dev.to.
@@ -89,6 +198,8 @@ def publish_to_devto(
         payload["article"]["tags"] = normalized
     if description:
         payload["article"]["description"] = description[:300] if len(description) > 300 else description
+    if cover_image and cover_image.startswith("https://"):
+        payload["article"]["cover_image"] = cover_image
 
     r = requests.post(
         "https://dev.to/api/articles",
