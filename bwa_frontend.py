@@ -17,6 +17,12 @@ import streamlit as st
 # -----------------------------
 from bwa_backend import app
 
+try:
+    from publish import publish_to_devto, publish_to_medium, extract_post_url
+    PUBLISH_AVAILABLE = True
+except Exception:
+    PUBLISH_AVAILABLE = False
+
 
 # -----------------------------
 # Helpers
@@ -145,11 +151,11 @@ def render_markdown_with_local_images(md: str):
                     parts[i + 1] = ("md", rest)
 
         if src.startswith("http://") or src.startswith("https://"):
-            st.image(src, caption=caption or (alt or None), use_container_width=True)
+            st.image(src, caption=caption or (alt or None), width="stretch")
         else:
             img_path = _resolve_image_path(src)
             if img_path.exists():
-                st.image(str(img_path), caption=caption or (alt or None), use_container_width=True)
+                st.image(str(img_path), caption=caption or (alt or None), width="stretch")
             else:
                 st.warning(f"Image not found: `{src}` (looked for `{img_path}`)")
 
@@ -363,7 +369,7 @@ if out:
                         for t in tasks
                     ]
                 ).sort_values("id")
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                st.dataframe(df, width="stretch", hide_index=True)
 
                 with st.expander("Task details"):
                     st.json(tasks)
@@ -387,7 +393,7 @@ if out:
                         "url": e.get("url"),
                     }
                 )
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     # --- Preview tab ---
     with tab_preview:
@@ -423,6 +429,73 @@ if out:
                 mime="application/zip",
             )
 
+            # --- Publish to Dev.to / Medium ---
+            st.divider()
+            st.subheader("Publish to web")
+            if PUBLISH_AVAILABLE:
+                _pub_slug = safe_slug(blog_title)
+                if st.session_state.get("_publish_for_slug") != _pub_slug:
+                    st.session_state["publish_results"] = []
+                    st.session_state["_publish_for_slug"] = _pub_slug
+                if "publish_results" not in st.session_state:
+                    st.session_state["publish_results"] = []
+                for pr in st.session_state["publish_results"][-3:]:
+                    plat = pr.get("platform", "")
+                    url = pr.get("url")
+                    draft = pr.get("draft", False)
+                    if url:
+                        st.success(f"**{plat}:** [Open post]({url})")
+                    else:
+                        st.info(f"**{plat}:** Submitted ({'draft' if draft else 'published'}). Open your dashboard to find the post.")
+
+                publish_devto = st.checkbox("Publish to **Dev.to**", value=False)
+                publish_medium = st.checkbox("Publish to **Medium**", value=False)
+                as_draft = st.checkbox("Publish as draft", value=False)
+                tags: List[str] = []
+                plan_obj = out.get("plan")
+                if plan_obj:
+                    tasks = getattr(plan_obj, "tasks", None) or (plan_obj.get("tasks", []) if isinstance(plan_obj, dict) else [])
+                    for t in tasks or []:
+                        t_tags = getattr(t, "tags", None) or (t.get("tags", []) if isinstance(t, dict) else [])
+                        tags.extend(t_tags if isinstance(t_tags, list) else [])
+                tags = list(dict.fromkeys(tags))[:5]
+
+                if st.button("Publish", type="primary"):
+                    st.session_state["publish_results"] = []
+                    if not publish_devto and not publish_medium:
+                        st.warning("Select at least one platform (Dev.to or Medium).")
+                    else:
+                        published = not as_draft
+                        for name, key, do_publish, pub_fn in [
+                            ("Dev.to", "devto", publish_devto, lambda: publish_to_devto(blog_title, final_md, published=published, tags=tags or None)),
+                            ("Medium", "medium", publish_medium, lambda: publish_to_medium(blog_title, final_md, published=published, tags=tags or None)),
+                        ]:
+                            if not do_publish:
+                                continue
+                            try:
+                                result = pub_fn()
+                                url = extract_post_url(key, result) if isinstance(result, dict) else None
+                                if not url and isinstance(result, dict):
+                                    url = result.get("url") or (result.get("data") or {}).get("url")
+                                st.session_state["publish_results"].append(
+                                    {"platform": name, "url": url, "draft": as_draft}
+                                )
+                                if url:
+                                    st.success(f"**{name}:** [View post]({url})")
+                                else:
+                                    st.success(
+                                        f"**{name}:** Created. Check **Dashboard** → "
+                                        f"{'Drafts' if as_draft else 'Published'} on {name}."
+                                    )
+                            except Exception as e:
+                                st.error(f"**{name}** failed: {e}")
+                st.caption(
+                    "How to verify: after success, open the link above, or on **Dev.to** go to "
+                    "[dev.to/dashboard](https://dev.to/dashboard) → Posts; on **Medium** open your profile → Stories."
+                )
+            else:
+                st.caption("Install `requests` and ensure `publish.py` is available to enable publishing.")
+
     # --- Images tab ---
     with tab_images:
         st.subheader("Images")
@@ -442,7 +515,7 @@ if out:
                     st.warning("images/ exists but is empty.")
                 else:
                     for p in sorted(files):
-                        st.image(str(p), caption=p.name, use_container_width=True)
+                        st.image(str(p), caption=p.name, width="stretch")
 
                 z = images_zip(images_dir)
                 if z:

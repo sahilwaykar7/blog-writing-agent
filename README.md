@@ -73,6 +73,15 @@ Your browser should open to **http://localhost:8501**. If it doesn’t, open tha
 
 Generated markdown is saved as `*.md` in the project folder; if images are generated, they go into an `images/` folder.
 
+### 8. Publish to Dev.to or Medium
+
+After a blog is generated, open the **Markdown Preview** tab and scroll to **Publish to web**. Add API keys to `.env`:
+
+- **Dev.to:** [Settings → Account → DEV API Keys](https://dev.to/settings/extensions) → create a key → add `DEVTO_API_KEY=...` to `.env`.
+- **Medium:** [Settings → Integration tokens](https://medium.com/me/settings/security) → create a token → add `MEDIUM_INTEGRATION_TOKEN=...` to `.env`.
+
+Then check **Publish to Dev.to** and/or **Publish to Medium**, optionally check **Publish as draft**, and click **Publish**. The post URL will appear on success.
+
 ---
 
 ## Optional: image generation fallback
@@ -92,6 +101,7 @@ If OpenAI image generation fails and you want a fallback provider, add `GOOGLE_A
 | Port 8501 in use | Run `streamlit run bwa_frontend.py --server.port 8502` (or another free port). |
 | Research returns no results | Set `TAVILY_API_KEY` in `.env` if you want web search. |
 | Images not generated | OpenAI image generation is tried first. If that fails, set `GOOGLE_API_KEY` for Gemini fallback and retry. |
+| Publish failed | Ensure `DEVTO_API_KEY` or `MEDIUM_INTEGRATION_TOKEN` is set in `.env` and valid. |
 
 ---
 
@@ -99,4 +109,5 @@ If OpenAI image generation fails and you want a fallback provider, add `GOOGLE_A
 
 - **bwa_backend.py** – LangGraph pipeline (router → research → plan → workers → reducer/images).
 - **bwa_frontend.py** – Streamlit UI; run with `streamlit run bwa_frontend.py`.
+- **publish.py** – Publish posts to Dev.to and Medium (optional; requires `requests` and API keys in `.env`).
 - **1_bwa_basic.ipynb … 5_bwa_image.ipynb** – Jupyter notebooks for development/experiments.
